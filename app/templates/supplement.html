@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% macro num(value) %}{% if value is none %}<span class="unknown">未定</span>{% else %}{{ '%.4f'|format(value|float) }}{% endif %}{% endmacro %}
+{% macro table(rows, cols, empty) %}
+<div class="table-scroll"><table><thead><tr>{% for col in cols %}<th>{{ meta.labels.get(col,col) }}</th>{% endfor %}</tr></thead><tbody>
+{% for row in rows %}<tr>{% for col in cols %}{% set v=row.get(col) %}<td title="{{ v }}">{% if v is none %}<span class="unknown">未定</span>{% elif v is sequence and v is not string %}{{ v|join(' + ') or '—' }}{% elif col in ('loss_kwh','available') %}{{ num(v) }}{% else %}{{ v }}{% endif %}</td>{% endfor %}</tr>
+{% else %}<tr><td colspan="{{ cols|length }}" class="muted">{{ empty }}</td></tr>{% endfor %}
+</tbody></table>
+</div>
+{% endmacro %}
+{% block content %}
+{% set report=state.supplement %}
+<section class="panel status-panel">
+  <div class="panel__head"><h2>补证状态</h2><span>{{ report.status }}{% if report.base.rounds %} · 第 {{ report.base.rounds }} 轮补证{% else %} · 基准批{% endif %}{% if not report.base.is_self %} · 基准 {{ report.base.run_id }}{% endif %}</span></div>
+  <div class="facts">
+    <div class="fact"><small>当前可用损失 kWh</small><b>{{ report.available_loss_kwh }}</b></div>
+    <div class="fact"><small>正式损失 kWh</small><b>{{ report.official_loss_kwh }}</b></div>
+    <div class="fact"><small>暂定损失 kWh</small><b>{{ report.provisional_loss_kwh }}</b></div>
+    <div class="fact"><small>未定片段</small><b>{{ report.counts.undetermined }}</b></div>
+    <div class="fact"><small>未核清时段</small><b>{{ report.counts.unresolved_windows }}</b></div>
+    <div class="fact"><small>隔离记录</small><b>{{ report.counts.quarantine }}</b></div>
+    <div class="fact"><small>补证锁定</small><b>{{ report.counts.held }}</b></div>
+    <div class="fact"><small>裁定剔除</small><b>{{ report.counts.voided }}</b></div>
+  </div>
+  <p class="rule-note">正式值只统计已核清时段的确定损失；未核清时段内的取值单列为暂定，补传齐备且冲突裁定后自动转入正式。
+    {% if report.complete and state.archive.status=='待复核' and report.counts.quarantine %}仍有 {{ report.counts.quarantine }} 条原始隔离记录，损失虽已完整，封存须先处理隔离或重新导入基准批。{% endif %}
+    {% if state.archive.status=='可归档' %}补证完整、时段核清、四账守恒且无隔离，本批可封存。{% endif %}</p>
+</section>
+
+<section class="panel main-panel">
+  <div class="panel__head"><h2>受影响时段</h2><span>{{ report.counts.windows }} 段 · 未核清 {{ report.counts.unresolved_windows }}</span></div>
+  {% for w in report.windows %}
+  <div class="window">
+    <div class="window__head">
+      <b>{{ w.device }}</b>
+      <code>{{ w.start[11:16] }}–{{ w.end[11:16] }} UTC</code>
+      <span>{{ w.seconds//60 }} min</span>
+      <span class="badge {{ 'ok' if w.status=='已核清' else 'warn' }}">{{ w.status }}</span>
+      {% if w.unknown_segments %}<span class="muted">未定片段 {{ w.unknown_segments }}</span>{% endif %}
+      {% for reason in w.reasons %}<span class="tag">{{ reason }}</span>{% endfor %}
+    </div>
+    <table><thead><tr><th>来源</th><th>证据号</th><th>原因码</th><th>说明</th><th>采样时刻 / 区间 UTC</th></tr></thead><tbody>
+    {% for r in w.records %}
+      <tr class="{{ 'blocking' if r.blocking else '' }}"><td>{{ r.source }}</td><td>{{ r.id }}</td><td>{{ r.code }}</td><td title="{{ r.detail }}">{{ r.detail }}</td><td>{% if r.start %}{{ r.start[11:16] }}–{{ r.end[11:16] }}{% else %}{{ r.at[11:16] }}{% endif %}</td></tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">该时段没有补传或隔离记录。</td></tr>
+    {% endfor %}
+    </tbody></table>
+  </div>
+  {% else %}
+  <p class="empty-note">没有受补传影响的时段，当前各片段不受补证干扰。</p>
+  {% endfor %}
+</section>
+
+<div class="grid">
+  <section class="panel">
+    <div class="panel__head"><h2>未定损失</h2><span>{{ report.counts.undetermined }} 片段 · {{ report.undetermined|sum(attribute='seconds')//60 }} min</span></div>
+    {{ table(report.undetermined, ['device','start','end','seconds','code','reason','reference_ids'], '没有未定片段，损失已可完整核算。') }}
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>片段取值</h2><span>正式 {{ report.counts.official }} · 暂定 {{ report.counts.provisional }} · 未定 {{ report.counts.undetermined }}</span></div>
+    {{ table(report.segment_status, ['device','start','end','loss_kwh','status'], '当前无片段。') }}
+  </section>
+</div>
+
+<section class="panel">
+  <div class="panel__head"><h2>原始隔离记录</h2><span>{{ report.quarantine|length }} 条</span></div>
+  {{ table(report.quarantine, ['line','id','code','detail'], '没有隔离记录。') }}
+</section>
+
+<div class="grid">
+  <section class="panel">
+    <div class="panel__head"><h2>补证锁定</h2><span>{{ report.held|length }} 条 · 落在已确定时段，未覆盖正式值</span></div>
+    {{ table(report.held, ['round','id','device','at','start','end','reason','detail'], '没有试图覆盖正式值的补证行。') }}
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>裁定剔除</h2><span>{{ report.voided|length }} 条</span></div>
+    {{ table(report.voided, ['id','reason','detail'], '本轮未提交裁定。') }}
+  </section>
+</div>
+
+<div class="grid">
+  <section class="panel">
+    <div class="panel__head"><h2>补证采纳</h2><span>{{ report.applied|length }} 条</span></div>
+    {{ table(report.applied, ['round','id','kind','device','at','start','end'], '没有可并入复算的补证行。') }}
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>未采信补证</h2><span>{{ report.ignored|length }} 条</span></div>
+    {{ table(report.ignored, ['round','id','reason','detail'], '没有重复或无效的补证行。') }}
+  </section>
+</div>
+
+<section class="panel supplement-form">
+  <div class="panel__head"><h2>提交补证</h2><span>字段顺序与源数据一致：id,kind,device,at,power,unit,irradiance,status,start,end</span></div>
+  <form id="supplement-form">
+    <label>补传 CSV<textarea id="supplement-csv" placeholder="INV-A-20B,TELEMETRY,INV-A,2026-10-15T10:20:00+08:00,60,kW,800,健康,,"></textarea></label>
+    <label>裁定剔除<textarea id="supplement-void" placeholder="每行一条：编号,原因。例如&#10;A-CONFLICT,与 INV-A-20 冲突，采纳补证"></textarea></label>
+    <div class="form-actions">
+      <button type="submit" id="supplement-submit">并入基准批复算</button>
+      <span class="muted">补证只填补未定与未核清时段；已确定的正式值按段锁定，重跑同一补证不新增批次、不改动取值。</span>
+    </div>
+    <output id="supplement-feedback" aria-live="polite"></output>
+  </form>
+  <p class="rule-note">锁定校验：{{ report.immutability.locked_segments }} 个正式片段合计 {{ report.immutability.locked_loss_kwh }} kWh，段位指纹 <code>{{ report.immutability.locked_sha[:16] or '—' }}</code>。</p>
+</section>
+
+<script>
+document.querySelector('#supplement-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const button=document.querySelector('#supplement-submit');const feedback=document.querySelector('#supplement-feedback');
+  button.disabled=true;feedback.textContent='复算中…';
+  try{
+    const response=await fetch('/api/supplement',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_run_id:document.body.dataset.runId,csv_text:document.querySelector('#supplement-csv').value,void_text:document.querySelector('#supplement-void').value})});
+    const data=await response.json();
+    if(!response.ok)throw Error(data.detail||data.code);
+    location.href='/supplement?run_id='+data.manifest.run_id;
+  }catch(error){feedback.textContent=error.message;}
+  finally{button.disabled=false;}
+});
+</script>
+{% endblock %}

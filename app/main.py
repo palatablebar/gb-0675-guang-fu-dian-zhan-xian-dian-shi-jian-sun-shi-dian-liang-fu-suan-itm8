@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from app.config import ROOT, META, MODULES, DB_PATH
 from app.errors import BusinessError
-from app.engine import evaluate
+from app.engine import evaluate, evaluate_supplement, void_text_map
 from app import store
 from app.archive import serialize
 
@@ -27,6 +27,18 @@ def health():
 @app.post('/api/runs')
 def create(payload:dict=Body(default={})):
     return store.save(DB_PATH,evaluate(payload))
+def _voids(payload):
+    void=payload.get('void') or {}
+    if not isinstance(void,dict): raise BusinessError('BAD_VOID','补证裁定须为对象')
+    void={**void, **void_text_map(payload.get('void_text'))}
+    return void
+@app.post('/api/supplement')
+def supplement_run(payload:dict=Body(default={})):
+    base_id=payload.get('base_run_id')
+    if not base_id: raise BusinessError('BAD_BASE','请指定基准批次')
+    base=store.get(DB_PATH,base_id)
+    return store.save(DB_PATH,evaluate_supplement(base,{'csv_text':payload.get('csv_text',''),
+        'void':_voids(payload)}))
 @app.post('/api/runs/{run_id}/rerun')
 def rerun(run_id:str):
     previous=store.get(DB_PATH,run_id)
@@ -48,5 +60,9 @@ def review(run_id:str,payload:dict=Body(...)):
 def export(run_id:str):
     result=store.get(DB_PATH,run_id)
     return Response(serialize(result),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{run_id}.zip"'})
+@app.get('/supplement')
+def supplement_page(request:Request):
+    from app.web import render
+    return render(request,'supplement')
 for key in MODULES:
     app.include_router(import_module(f'app.modules.{key}.handler').router)

@@ -1,4 +1,4 @@
-import io, csv, json, zipfile, hashlib
+import io, json, zipfile
 from app.errors import BusinessError
 
 def serialize(result):
@@ -7,5 +7,11 @@ def serialize(result):
     buffer=io.BytesIO()
     with zipfile.ZipFile(buffer,'w',compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('manifest.json',json.dumps({**result['manifest'],'revision':result.get('revision',1),'status':result.get('status','待复核')},ensure_ascii=False,indent=2))
-        archive.writestr('evidence.json',json.dumps({'counts':result['counts'],'views':result['views'],'quarantine':result['quarantine']},ensure_ascii=False,indent=2))
+        evidence={'counts':result['counts'],'views':result['views'],'quarantine':result['quarantine']}
+        if 'supplement' in result:
+            report=result['supplement']
+            evidence['supplement']=report
+            evidence['voided']=result.get('voided',[])
+        if 'balance' in result: evidence['balance']=result['balance']
+        archive.writestr('evidence.json',json.dumps(evidence,ensure_ascii=False,indent=2))
     return buffer.getvalue()

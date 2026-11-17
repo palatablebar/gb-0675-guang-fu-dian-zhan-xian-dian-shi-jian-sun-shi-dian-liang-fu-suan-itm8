@@ -67,6 +67,8 @@
     "unknown_seconds": "未定 s",
     "line": "原始行",
     "_line": "原始行",
-    "detail": "原因"
+    "detail": "原因",
+    "source": "来源",
+    "reason": "说明"
   }
 }

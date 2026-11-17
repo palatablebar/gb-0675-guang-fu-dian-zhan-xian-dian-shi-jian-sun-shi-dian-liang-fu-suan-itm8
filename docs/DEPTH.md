@@ -13,6 +13,7 @@
 | M5 损失核算 | 执行并复核损失核算 | `POST /api/loss` | `app/modules/loss/rules.py` | `tests/test_loss.py` |
 | M6 能量对账 | 执行并复核能量对账 | `POST /api/reconcile` | `app/modules/reconcile/rules.py` | `tests/test_reconcile.py` |
 | M7 运行归档 | 执行并复核运行归档 | `POST /api/archive` | `app/modules/archive/rules.py` | `tests/test_archive.py` |
+| M8 补证工作台 | 提交迟到补传并核清受影响时段 | `POST /api/supplement` | `app/supplement.py` | `tests/test_supplement.py`、`tests/test_supplement_api.py` |
 
 ## 陷阱登记
 
@@ -29,6 +30,9 @@
 | TRAP-06 | 全角千分位 | 静默错算或证据丢失 | 以可复核规则显式处理 | `app/modules/devices/rules.py` | `tests/test_devices.py::test_fullwidth_number` |
 | TRAP-11 | UTC归一 | 静默错算或证据丢失 | 以可复核规则显式处理 | `app/modules/devices/rules.py` | `tests/test_devices.py::test_time_equivalence` |
 | TRAP-23 | 限电区间并集 | 静默错算或证据丢失 | 以可复核规则显式处理 | `app/modules/slicing/rules.py` | `tests/test_slicing.py::test_overlapping_real` |
+| TRAP-24 | 迟到补传覆盖正式值 | 整批停住或旧值被改写 | 段位锁定并登记 `LOCKED_WINDOW`，重跑批号与取值不变 | `app/supplement.py` | `tests/test_supplement.py::test_supplement_cannot_overwrite_official_value` |
+| TRAP-25 | 受影响时段未核清 | 暂定值被当成正式值上报 | 正式/暂定/未定三段分离，未核清不计正式 | `app/supplement.py` | `tests/test_supplement.py::test_filled_gap_without_resolving_conflict_stays_provisional` |
+| TRAP-26 | 补证重跑重复造批 | 同补证多次入库、取值漂移 | 补证与裁定入批号指纹，`INSERT OR IGNORE` 只留一条 | `app/engine.py` | `tests/test_supplement_api.py::test_supplement_api_is_idempotent` |
 
 ## 对账规则
 
